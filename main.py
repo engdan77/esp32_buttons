@@ -37,9 +37,9 @@ def light_on(on=True, period=None, pin=2):
 def restart_wifi(sta_if):
     sta_if.disconnect()
     sta_if.active(False)
-    utime.sleep(2)
+    utime.sleep(1)
     sta_if.active(True)
-    utime.sleep(2)
+    utime.sleep(1)
     sta_if.connect('***REMOVED***', '***REMOVED***')
 
 def wifi_connect():
@@ -54,33 +54,36 @@ def wifi_connect():
     while not sta_if.isconnected():
         repeats += 1
         utime.sleep(0.3)
-        light_on(True, 0.3, 27)
-        if repeats >= 3:
+        light_on(True, 0.2, 27)
+        if repeats >= 8:
             repeats = 0
             restart_wifi(sta_if)
     light_on(True, None, 32)
 
 
 def main():
-    blink(5)
+    boot_value = machine.Pin(36, machine.Pin.IN).value()
 
-    p = machine.Pin(36, machine.Pin.IN)
-    boot_value = p.value()
-    with open('pin.log', 'a+') as f:
-        f.write('{},'.format(boot_value))
+    # with open('pin.log', 'w') as f:
+    #     f.write('{},'.format(boot_value))
 
-    light_on(p.value())
+    blink(1, 2, 0.1)
+
+    light_on(boot_value)
 
     utime.sleep(3)
 
-    if not boot_value:
-        wifi_connect()
-        utime.sleep(2)
-        light_on(True, 2, [27, 32])
+    wifi_connect()
+    utime.sleep(2)
+    light_on(True, 2, [27, 32])
 
-    # mqtt_send('/esp32/pin', boot_value, '10.1.1.1', 'esp32', user='homeassistant', password='***REMOVED***')
-    # esp32.wake_on_ext0(pin=p, level=esp32.WAKEUP_ANY_HIGH)
-    # machine.deepsleep()
+    mqtt_send('/esp32/pin', str(boot_value), '10.1.1.1', 'esp32', user='homeassistant', password='***REMOVED***')
+
+    utime.sleep(2)
+
+    boot_pin = machine.Pin(36, machine.Pin.IN)
+    esp32.wake_on_ext0(pin=boot_pin, level=esp32.WAKEUP_ANY_HIGH)
+    machine.deepsleep()
 
 
 if __name__ == '__main__':
