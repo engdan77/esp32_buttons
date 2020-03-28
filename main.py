@@ -1,16 +1,13 @@
 import machine
+from machine import Pin, I2C
 import esp32
 import utime
 from umqtt.robust import MQTTClient
 import network
+import ssd1306
 
 
-def mqtt_send(topic,
-              msg,
-              server,
-              client_id,
-              user,
-              password):
+def mqtt_send(topic, msg, server, client_id, user, password):
     client = MQTTClient(client_id, server, user=user, password=password)
     client.connect()
     client.publish(topic, msg)
@@ -40,52 +37,72 @@ def restart_wifi(sta_if):
     utime.sleep(1)
     sta_if.active(True)
     utime.sleep(1)
-    sta_if.connect('***REMOVED***', '***REMOVED***')
+    sta_if.connect("***REMOVED***", "***REMOVED***")
 
-def wifi_connect():
+
+def wifi_connect(ssid, password, pin_working=12, pin_connected=14):
     sta_if = network.WLAN(network.STA_IF)
     if sta_if.isconnected():
         print("Already connected")
         return
     sta_if.active(True)
-    sta_if.connect('***REMOVED***', '***REMOVED***')
+    sta_if.connect(ssid, password)
 
     repeats = 0
     while not sta_if.isconnected():
         repeats += 1
         utime.sleep(0.3)
-        light_on(True, 0.2, 27)
+        light_on(True, 0.2, pin_working)
         if repeats >= 8:
             repeats = 0
             restart_wifi(sta_if)
-    light_on(True, None, 32)
+    light_on(True, None, pin_connected)
 
 
 def main():
-    boot_value = machine.Pin(36, machine.Pin.IN).value()
+    wakeup_pin = 26
+    boot_value = machine.Pin(wakeup_pin, machine.Pin.IN).value()
+    print(boot_value)
 
     # with open('pin.log', 'w') as f:
     #     f.write('{},'.format(boot_value))
 
-    blink(1, 2, 0.1)
-
+    blink(1, 2, 2)
     light_on(boot_value)
+    display_text("button pressed " + str(boot_value))
 
     utime.sleep(3)
 
-    wifi_connect()
-    utime.sleep(2)
-    light_on(True, 2, [27, 32])
-
-    mqtt_send('/esp32/pin', str(boot_value), '10.1.1.1', 'esp32', user='homeassistant', password='***REMOVED***')
-
+    wifi_ssid, password = ("***REMOVED***", "***REMOVED***")
+    wifi_connect(wifi_ssid, password)
     utime.sleep(2)
 
-    boot_pin = machine.Pin(36, machine.Pin.IN)
+    mqtt_send(
+        "/esp32/pin",
+        str(boot_value),
+        "10.1.1.5",
+        "esp32",
+        user="homeassistant",
+        password="***REMOVED***",
+    )
+    utime.sleep(2)
+
+    boot_pin = machine.Pin(wakeup_pin, machine.Pin.IN)
     esp32.wake_on_ext0(pin=boot_pin, level=esp32.WAKEUP_ANY_HIGH)
     machine.deepsleep()
 
 
-if __name__ == '__main__':
+def display_text(input_text, scl_pin=22, sda_pin=21):
+    # ESP32 Pin assignment
+    i2c = I2C(-1, scl=Pin(scl_pin), sda=Pin(sda_pin))
+    oled_width = 128
+    oled_height = 64
+    oled = ssd1306.SSD1306_I2C(oled_width, oled_height, i2c)
+    oled.fill(0)
+    oled.text(input_text, 0, 0)
+    oled.show()
+
+
+if __name__ == "__main__":
     # pass
     main()
