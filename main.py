@@ -5,6 +5,52 @@ import utime
 from umqtt.robust import MQTTClient
 import network
 import ssd1306
+from ubinascii import hexlify
+from machine import unique_id
+from mqtt_as_timeout import MQTTClient
+import uasyncio as asyncio
+
+
+config = {
+    'client_id':     hexlify(unique_id()),
+    'server':        '10.1.1.5',
+    'port':          0,
+    'user':          'homeassistant',
+    'password':      '***REMOVED***',
+    'keepalive':     60,
+    'ping_interval': 0,
+    'ssl':           False,
+    'ssl_params':    {},
+    'response_time': 10,
+    'clean_init':    True,
+    'clean':         True,
+    'max_repubs':    4,
+    'will':          ('result', 'Goodbye cruel world!', False, 0),
+    'subs_cb':       lambda *_: None,
+    'wifi_coro':     eliza,
+    'connect_coro':  eliza,
+    'ssid':          '***REMOVED***',
+    'wifi_pw':       '***REMOVED***',
+}
+
+# led in 26, 25, 33, 32, 35, 34, 39
+# led out 12, 14, 27
+# led out - 23, 19, 18, 5, 17, 16, 4
+
+
+buttons = {
+    26: {
+        "name": "1",
+        "led_out": 23,
+        "commands": {"Barn TV": "/tv_command barn_tv", "TV4": "/tv_command tv4"},
+    },
+    26: {"name": "2", "led_out": 19, "commands": {}},
+    33: {"name": "3", "led_out": 18, "commands": {}},
+    32: {"name": "4", "led_out": 5, "commands": {}},
+    35: {"name": "5", "led_out": 17, "commands": {}},
+    34: {"name": "6", "led_out": 16, "commands": {}},
+    39: {"name": "7", "led_out": 4, "commands": {}},
+}
 
 
 def mqtt_send(topic, msg, server, client_id, user, password):
@@ -59,36 +105,46 @@ def wifi_connect(ssid, password, pin_working=12, pin_connected=14):
     light_on(True, None, pin_connected)
 
 
-def main():
-    wakeup_pin = 26
-    boot_value = machine.Pin(wakeup_pin, machine.Pin.IN).value()
-    print(boot_value)
+def get_pushed_pins(pin_list):
+    return [Pin(p, Pin.IN).value() for p in pin_list]
+
+
+def get_wakeup_pins(pin_list):
+    return [Pin(p, Pin.IN) for p in pin_list]
+
+
+async def start_main(mqtt_client=mqtt_client):
+    button_pins = list(buttons.keys())
+    t = ",".join(list(map(str, get_pushed_pins(button_pins))))
+    print(t)
 
     # with open('pin.log', 'w') as f:
     #     f.write('{},'.format(boot_value))
 
     blink(1, 2, 2)
     light_on(boot_value)
-    display_text("button pressed " + str(boot_value))
+    display_text(str(t))
 
     utime.sleep(3)
 
-    wifi_ssid, password = ("***REMOVED***", "***REMOVED***")
-    wifi_connect(wifi_ssid, password)
-    utime.sleep(2)
+    # wifi_ssid, password = ("***REMOVED***", "***REMOVED***")
+    # wifi_connect(wifi_ssid, password)
+    # utime.sleep(2)
 
-    mqtt_send(
-        "/esp32/pin",
-        str(boot_value),
-        "10.1.1.5",
-        "esp32",
-        user="homeassistant",
-        password="***REMOVED***",
-    )
-    utime.sleep(2)
+    try:
+        await mqtt_client.connect()
+    except OSError as e:
+        print('failed connecting to mqtt: {}'.format(e))
+        display_text('mqtt error')
+    else:
+        utime.sleep(2)
 
-    boot_pin = machine.Pin(wakeup_pin, machine.Pin.IN)
-    esp32.wake_on_ext0(pin=boot_pin, level=esp32.WAKEUP_ANY_HIGH)
+    print('going deep sleep')
+    print(button_pins)
+    blink(5, 2, 0.5)
+    wakeup_pins = get_wakeup_pins(button_pins)
+    clear_screen()
+    esp32.wake_on_ext1(wakeup_pins, esp32.WAKEUP_ANY_HIGH)
     machine.deepsleep()
 
 
@@ -103,6 +159,22 @@ def display_text(input_text, scl_pin=22, sda_pin=21):
     oled.show()
 
 
+def clear_screen(scl_pin=22, sda_pin=21):
+    i2c = I2C(-1, scl=Pin(scl_pin), sda=Pin(sda_pin))
+    oled_width = 128
+    oled_height = 64
+    oled = ssd1306.SSD1306_I2C(oled_width, oled_height, i2c)
+    oled.fill(0)
+
+
 if __name__ == "__main__":
     # pass
-    main()
+    loop = asyncio.get_event_loop()
+    print('Setting up client.')
+    MQTTClient.DEBUG = True  # Optional
+    mqtt_client = MQTTClient(config)
+    print('About to run.')
+    try:
+        loop.run_until_complete(start_main(mqtt_client=mqtt_client))
+    finally:
+        mqtt_client.close()
