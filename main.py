@@ -1,13 +1,12 @@
+from mqtt_as_timeout import MQTTClient
 import machine
 from machine import Pin, I2C
 import esp32
 import utime
-from umqtt.robust import MQTTClient
 import network
 import ssd1306
 from ubinascii import hexlify
 from machine import unique_id
-from mqtt_as_timeout import MQTTClient
 import uasyncio as asyncio
 
 
@@ -38,16 +37,7 @@ def wifi_coro(connected_bool):
 
 def connect_coro(client_instance):
     print("connected to broker")
-    client_instance.publish(
-        "/esp32/button", "connected", retain=False, qos=0, timeout=None
-    )
-
-
-def mqtt_send(topic, msg, server, client_id, user, password):
-    client = MQTTClient(client_id, server, user=user, password=password)
-    client.connect()
-    client.publish(topic, msg)
-    client.disconnect()
+    client_instance.publish("/esp32/button", "connected", retain=False, qos=1, timeout=None)
 
 
 def blink(times=5, pin=2, time_between=0.3):
@@ -95,8 +85,12 @@ def wifi_connect(ssid, password, pin_working=12, pin_connected=14):
     light_on(True, None, pin_connected)
 
 
-def get_pushed_pins(pin_list):
-    return [Pin(p, Pin.IN).value() for p in pin_list]
+def get_buttons_pressed(button_config):
+    buttons_pressed = []
+    for k, v in button_config.items():
+        if Pin(p, Pin.IN).value():
+            buttons_pressed.append(v.get('name', ''))
+    return buttons_pressed
 
 
 def get_wakeup_pins(pin_list):
@@ -105,21 +99,13 @@ def get_wakeup_pins(pin_list):
 
 async def start_main(mqtt_client):
     button_pins = list(buttons.keys())
-    t = ",".join(list(map(str, get_pushed_pins(button_pins))))
-    print(t)
-
-    # with open('pin.log', 'w') as f:
-    #     f.write('{},'.format(boot_value))
+    buttons_pressed = get_buttons_pressed(button_pins)
+    t = ",".join(buttons_pressed)
+    print('buttons pressed: {}'.format(t))
 
     blink(1, 2, 2)
-    # light_on(boot_value)
     display_text(str(t))
-
     utime.sleep(3)
-
-    # wifi_ssid, password = ("***REMOVED***", "***REMOVED***")
-    # wifi_connect(wifi_ssid, password)
-    # utime.sleep(2)
 
     try:
         await mqtt_client.connect()
@@ -127,8 +113,10 @@ async def start_main(mqtt_client):
         print("failed connecting to mqtt: {}".format(e))
         display_text("mqtt error")
     else:
-        utime.sleep(2)
+        for b in buttons_pressed:
+            mqtt_client.publish("/esp32/button", b, retain=False, qos=1, timeout=None)
 
+    utime.sleep(2)
     print("going deep sleep")
     print(button_pins)
     blink(5, 2, 0.5)
@@ -157,8 +145,7 @@ def clear_screen(scl_pin=22, sda_pin=21):
     oled.fill(0)
 
 
-if __name__ == "__main__":
-    # pass
+def start():
     config = {
         "client_id": hexlify(unique_id()),
         "server": "10.1.1.5",
@@ -189,3 +176,9 @@ if __name__ == "__main__":
         loop.run_until_complete(start_main(mqtt_client=mqtt_client))
     finally:
         mqtt_client.close()
+
+
+if __name__ == "__main__":
+    start()
+    # pass
+
