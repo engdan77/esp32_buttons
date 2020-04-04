@@ -229,17 +229,6 @@ class Controller:
         self.enabled = False
 
 
-async def mqtt_connect():
-    try:
-        await mqtt_client.connect()
-    except OSError as e:
-        print("failed connecting to mqtt: {}".format(e))
-        display_text("mqtt error")
-    else:
-        for b in buttons_pressed:
-            mqtt_client.publish("/esp32/button", b, retain=False, qos=1, timeout=None)
-
-
 def get_buttons_pressed(button_config):
     buttons_pressed = []
     for k, v in button_config.items():
@@ -292,28 +281,22 @@ def init_esp32():
 
 
 async def start_esp32_loop(mqtt_client):
-    button_pins = list(buttons.keys())
+    button_pins = list(buttons_conf_esp32.keys())
     buttons_pressed = get_buttons_pressed(button_pins)
     t = ",".join(buttons_pressed)
     print("buttons pressed: {}".format(t))
-
-    blink(1, 2, 2)
-    display_text(str(t))
-    utime.sleep(3)
 
     try:
         await mqtt_client.connect()
     except OSError as e:
         print("failed connecting to mqtt: {}".format(e))
-        display_text("mqtt error")
     else:
         for b in buttons_pressed:
             mqtt_client.publish("/esp32/button", b, retain=False, qos=1, timeout=None)
 
-    utime.sleep(2)
+    time.sleep(2)
     print("going deep sleep")
     print(button_pins)
-    blink(5, 2, 0.5)
 
 
 def init_other():
