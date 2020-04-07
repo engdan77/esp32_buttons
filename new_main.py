@@ -1,27 +1,25 @@
 import sys
 
 if sys.platform == "esp32":
-    import PySimpleGUI as sg
     from mqtt_as_timeout import MQTTClient
     import machine
+    import network
     from machine import unique_id
     from machine import Pin, I2C
     import esp32
     import utime as time
     import ssd1306
+    # noinspection PyUnresolvedReferences
     from ubinascii import hexlify
     import uasyncio as asyncio
+    from machine import Pin
 else:
     import asyncio
+    import PySimpleGUI as sg
     from collections import deque
     import time
     import PySimpleGUI as sg
-
-try:
-    import Pin
-except ModuleNotFoundError:
     from unittest.mock import Mock
-
     Pin = Mock()
     hexlify = Mock()
     unique_id = Mock()
@@ -62,11 +60,11 @@ buttons_conf_esp32 = {
 }
 
 
-def wifi_coro(connected_bool):
+async def wifi_coro(connected_bool):
     print("wifi connected {}".format(connected_bool))
 
 
-def connect_coro(client_instance):
+async def connect_coro(client_instance):
     print("connected to broker")
     client_instance.publish(
         "/esp32/button", "connected", retain=False, qos=1, timeout=None
@@ -150,14 +148,31 @@ class Screen:
         self.enabled = False
 
 
+def turn_on(pin):
+    Pin(pin, Pin.OUT).value(True)
+
+
 class Led:
     def __init__(self, pin_red=12, pin_green=13, pin_blue=14):
-        self.r = pin_red
-        self.g = pin_green
-        self.b = pin_blue
+        self.red = pin_red
+        self.green = pin_green
+        self.blue = pin_blue
 
-    def color(self, color, state):
-        pass
+    def state(self, on_state, colors, for_time=None):
+        colors = [colors] if isinstance(colors, int) else colors
+        self.turn_all_off()
+        if not on_state:
+            return
+        else:
+            for p in colors:
+                turn_on(p)
+            if for_time:
+                time.sleep(for_time)
+                self.turn_all_off()
+
+    def turn_all_off(self):
+        for p in (self.red, self.green, self.blue):
+            Pin(p, Pin.OUT).value(False)
 
 
 class Controller:
@@ -232,8 +247,8 @@ class Controller:
 def get_buttons_pressed(button_config):
     buttons_pressed = []
     for k, v in button_config.items():
-        if Pin(p, Pin.IN).value():
-            buttons_pressed.append(v.get("name", ""))
+        if Pin(k, Pin.IN).value():
+            buttons_pressed.append(v.get('name', ''))
     return buttons_pressed
 
 
@@ -248,6 +263,13 @@ def esp32_deep_sleep(button_pins):
 
 
 def init_esp32():
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_esp32_loop())
+    loop.run_forever()
+
+
+async def start_esp32_loop():
+    print('start esp32 loop')
     mqtt_config = {
         "client_id": hexlify(unique_id()),
         "server": "10.1.1.5",
@@ -262,41 +284,30 @@ def init_esp32():
         "clean_init": True,
         "clean": True,
         "max_repubs": 4,
-        "will": ("result", "Goodbye cruel world!", False, 0),
+        "will": None,
         "subs_cb": lambda *_: None,
         "wifi_coro": wifi_coro,
         "connect_coro": connect_coro,
         "ssid": "***REMOVED***",
         "wifi_pw": "***REMOVED***",
     }
-    loop = asyncio.get_event_loop()
-    print("Setting up client.")
+    print('start mqtt client')
     MQTTClient.DEBUG = True  # Optional
     mqtt_client = MQTTClient(mqtt_config)
-    print("About to run.")
-    try:
-        loop.run_until_complete(start_esp32_loop(mqtt_client=mqtt_client))
-    finally:
-        mqtt_client.close()
 
-
-async def start_esp32_loop(mqtt_client):
-    button_pins = list(buttons_conf_esp32.keys())
-    buttons_pressed = get_buttons_pressed(button_pins)
-    t = ",".join(buttons_pressed)
-    print("buttons pressed: {}".format(t))
+    buttons_pressed = get_buttons_pressed(buttons_conf_esp32)
 
     try:
         await mqtt_client.connect()
     except OSError as e:
         print("failed connecting to mqtt: {}".format(e))
     else:
-        for b in buttons_pressed:
-            mqtt_client.publish("/esp32/button", b, retain=False, qos=1, timeout=None)
+        print('connected successfully')
+        await mqtt_client.publish("/esp32/button", 'connected', retain=False, qos=1, timeout=None)
+        print('mqtt complete')
 
-    time.sleep(2)
+    asyncio.sleep(2)
     print("going deep sleep")
-    print(button_pins)
 
 
 def init_other():
@@ -330,7 +341,7 @@ async def other_loop(b, _text):
             break
         if event is not None:
             if event in ("1", "2"):
-                print(f"add {event} to queue")
+                print("add {} to queue".format(event))
                 b.mock_press(event)
     window.close()
 
