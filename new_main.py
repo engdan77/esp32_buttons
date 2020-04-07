@@ -13,6 +13,7 @@ if sys.platform == "esp32":
     from ubinascii import hexlify
     import uasyncio as asyncio
     from machine import Pin
+    from ucollections import deque
 else:
     import asyncio
     import PySimpleGUI as sg
@@ -67,14 +68,14 @@ async def wifi_coro(connected_bool):
 async def connect_coro(client_instance):
     print("connected to broker")
     client_instance.publish(
-        "/esp32/button", "connected", retain=False, qos=1, timeout=None
+        "/esp32/button", "established", retain=False, qos=1, timeout=None
     )
 
 
 class Buttons:
     def __init__(self, button_config, max_queue=10):
         self.config = button_config
-        self.q = deque(maxlen=max_queue)
+        self.q = deque((), 10)
         self.enabled = True
         _loop = asyncio.get_event_loop()
         _loop.create_task(self.loop_process())
@@ -103,7 +104,7 @@ class Screen:
     def __init__(
         self, text=[""], scl_pin=22, sda_pin=21, width=128, height=64, max_queue=10
     ):
-        self.q = deque(maxlen=max_queue)
+        self.q = deque((), 10)
         self.scl_pin = scl_pin
         self.sda_pin = sda_pin
         self.width = width
@@ -304,9 +305,12 @@ async def start_esp32_loop():
     else:
         print('connected successfully')
         await mqtt_client.publish("/esp32/button", 'connected', retain=False, qos=1, timeout=None)
-        print('mqtt complete')
+        # print('mqtt complete')
 
     asyncio.sleep(2)
+    
+    screen = Screen()
+    screen.print('hello')
     print("going deep sleep")
 
 
