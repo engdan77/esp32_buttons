@@ -61,6 +61,14 @@ buttons_conf_esp32 = {
 }
 
 
+def empty_queue(queue):
+    while True:
+        try:
+            queue.popleft()
+        except IndexError:
+            break
+
+
 async def wifi_coro(connected_bool):
     print("wifi connected {}".format(connected_bool))
 
@@ -111,6 +119,11 @@ class Screen:
         self.height = height
         self.enabled = True
         self.text = text
+        self.p = sys.platform
+        if self.p == 'esp32':
+            i2c = I2C(-1, scl=Pin(self.scl_pin), sda=Pin(self.sda_pin))
+            self.oled = ssd1306.SSD1306_I2C(self.width, self.height, i2c)
+        self.clear()
         _loop = asyncio.get_event_loop()
         _loop.create_task(self.loop_process())
 
@@ -119,14 +132,19 @@ class Screen:
         print('adding text "{}" -> {}'.format(text, self.q))
 
     def clear(self):
-        self.print("")
+        if self.p == 'esp32':
+            self.oled.fill(0)
+            self.oled.show()
+        else:
+            self.print("")
 
     async def loop_process(self, sleep_time=0.1):
         print("starting screen loop")
         # this will be replaced by true hw
         while self.enabled:
             if self.q:
-                if sys.version == "esp32":
+                if self.p == "esp32":
+                    print('found new message in queue')
                     self._print_oled()
                 else:
                     self._print_mock()
@@ -137,13 +155,10 @@ class Screen:
 
     def _print_oled(self):
         text = self.q.popleft()
-        i2c = I2C(-1, scl=Pin(self.scl_pin), sda=Pin(self.sda_pin))
-        oled_width = self.width
-        oled_height = self.height
-        oled = ssd1306.SSD1306_I2C(oled_width, oled_height, i2c)
-        oled.fill(0)
-        oled.text(text, 0, 0)
-        oled.show()
+        print('printing {} to oled'.format(text))
+        self.oled.fill(0)
+        self.oled.text(text, 0, 0)
+        self.oled.show()
 
     def stop(self):
         self.enabled = False
@@ -177,7 +192,7 @@ class Led:
 
 
 class Controller:
-    def __init__(self, button_instance: Buttons, screen_instance: Screen, led_instance):
+    def __init__(self, button_instance: Buttons, screen_instance: Screen, led_instance: Led = None):
         self.b = button_instance
         self.s = screen_instance
         self.l = led_instance
@@ -194,14 +209,19 @@ class Controller:
             button_pressed = self.b.get_pressed()
             if button_pressed:
                 b = int(button_pressed)
-
                 await self.print_and_wait(b)
             await asyncio.sleep(sleep_time)
 
     async def print_and_wait(self, button_key):
-        print("print and wait")
-        options = self.b.config.get(button_key, None)
+        print("button {} ({}) pressed - print and wait".format(button_key, type(button_key)))
+        print('config')
+        print(self.b.config)
+        try:
+            options = next(iter([v for k, v in self.b.config.items() if str(v['name']) == str(button_key)]))
+        except StopIteration:
+            options = None
         if not options:
+            print('button not found in config')
             return
         if not self.current_button == button_key or self.current_option + 1 >= len(
             options["commands"]
@@ -211,7 +231,8 @@ class Controller:
 
         # switch to next option
         self.current_option += 1
-        self.s.print(list(options["commands"].keys())[self.current_option])
+        next_option = list(options["commands"].keys())[self.current_option]
+        self.s.print(next_option)
 
         # remember which button was pressed
         self.current_button = button_key
@@ -235,7 +256,7 @@ class Controller:
             )
             self.current_option = 0
             self.current_button = 0
-            self.b.q.clear()
+            empty_queue(self.b.q)
             self.s.clear()
             self.option_timers.pop(ref)
         else:
@@ -271,6 +292,11 @@ def init_esp32():
 
 async def start_esp32_loop():
     print('start esp32 loop')
+    buttons = Buttons(buttons_conf_esp32)
+    screen = Screen()
+    Controller(buttons, screen)
+
+
     mqtt_config = {
         "client_id": hexlify(unique_id()),
         "server": "10.1.1.5",
@@ -296,22 +322,27 @@ async def start_esp32_loop():
     MQTTClient.DEBUG = True  # Optional
     mqtt_client = MQTTClient(mqtt_config)
 
-    buttons_pressed = get_buttons_pressed(buttons_conf_esp32)
+    # buttons_pressed = get_buttons_pressed(buttons_conf_esp32)
+    buttons_pressed = buttons.get_pressed()
+    print(buttons_pressed)
+
+    screen.print('Connect MQTT')
 
     try:
         await mqtt_client.connect()
     except OSError as e:
-        print("failed connecting to mqtt: {}".format(e))
+        m = "failed connecting to mqtt: {}".format(e)
+        screen.print('MQTT fail')
     else:
         print('connected successfully')
         await mqtt_client.publish("/esp32/button", 'connected', retain=False, qos=1, timeout=None)
-        # print('mqtt complete')
+        screen.print('MQTT ok')
 
-    asyncio.sleep(2)
-    
-    screen = Screen()
-    screen.print('hello')
-    print("going deep sleep")
+    await asyncio.sleep(60)
+    screen.print('ZZzzz')
+    await asyncio.sleep(3)
+    screen.clear()
+    machine.reset()
 
 
 def init_other():
