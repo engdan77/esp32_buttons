@@ -5,7 +5,7 @@ if sys.platform == "esp32":
     import machine
     import network
     from machine import unique_id
-    from machine import Pin, I2C
+    from machine import Pin, I2C, PWM
     import esp32
     import utime as time
     import ssd1306
@@ -26,6 +26,8 @@ else:
     Pin = Mock()
     hexlify = Mock()
     unique_id = Mock()
+
+import random
 
 buttons_conf_other = {
     1: {
@@ -62,6 +64,11 @@ buttons_conf_esp32 = {
     34: {"name": "6", "led_out": 18, "commands": {}, "enabled": True},
     39: {"name": "7", "led_out": 23, "commands": {}, "enabled": True},
 }
+
+
+def chain(*p):
+    for i in p:
+        yield from i
 
 
 def empty_queue(queue):
@@ -172,12 +179,32 @@ def turn_on(pin):
 
 
 class Led:
-    def __init__(self, pin_red=12, pin_green=13, pin_blue=14):
+    def __init__(self, pin_red=13, pin_green=12, pin_blue=14, frequency=64):
         self.red = pin_red
         self.green = pin_green
         self.blue = pin_blue
+        self.pulse_on = False
+        self.frequency = frequency
+        self.turn_all_off()
 
-    def state(self, on_state, colors, for_time=None):
+    async def start_pulse(self, colors, speed=2):
+        self.pulse_on = True
+        colors = [colors] if isinstance(colors, int) else colors
+        self.turn_all_off()
+        leds = []
+        for p in colors:
+            leds.append(PWM(Pin(p), self.frequency))
+        while self.pulse_on:
+            for duty_cycle in chain(range(0, 128, speed), range(128, 0, -speed)):
+                for led in leds:
+                    led.duty(duty_cycle)
+                await asyncio.sleep(0.010)
+
+    def stop_pulse(self):
+        self.pulse_on = False
+        self.turn_all_off()
+
+    async def state(self, on_state, colors, for_time=None):
         colors = [colors] if isinstance(colors, int) else colors
         self.turn_all_off()
         if not on_state:
@@ -186,7 +213,7 @@ class Led:
             for p in colors:
                 turn_on(p)
             if for_time:
-                time.sleep(for_time)
+                await asyncio.sleep(for_time)
                 self.turn_all_off()
 
     def turn_all_off(self):
@@ -261,14 +288,17 @@ class Controller:
         _loop.create_task(self.start_timer(next_option))
 
     async def start_timer(self, option_text):
+        print('option_timers before {}'.format(self.option_timers))
         self.option_timers = {}
-        ref = time.time()
+        print('option_timers after {}'.format(self.option_timers))
+        ref = random.randint(1, 1000000)
         self.option_timers[ref] = self.option_timout
         timer_left = self.option_timers[ref]
         while ref in self.option_timers and timer_left >= 1:
             timer_left -= 1
             self.s.print("{} [{}]".format(option_text, timer_left + 1))
             await asyncio.sleep(1)
+            print('count down current option timers {}'.format(self.option_timers))
         if ref in self.option_timers:
             # this means no other key been pressed and timed out
             print(
@@ -312,54 +342,72 @@ def init_esp32():
     loop.run_forever()
 
 
+class MyMQTT:
+    def __init__(self, led_instance=None):
+        self.mqtt_config = {
+            "client_id": hexlify(unique_id()),
+            "server": "10.1.1.5",
+            "port": 0,
+            "user": "homeassistant",
+            "password": "***REMOVED***",
+            "keepalive": 60,
+            "ping_interval": 0,
+            "ssl": False,
+            "ssl_params": {},
+            "response_time": 10,
+            "clean_init": True,
+            "clean": True,
+            "max_repubs": 4,
+            "will": None,
+            "subs_cb": lambda *_: None,
+            "wifi_coro": wifi_coro,
+            "connect_coro": connect_coro,
+            "ssid": "***REMOVED***",
+            "wifi_pw": "***REMOVED***",
+        }
+        print("start mqtt client")
+        MQTTClient.DEBUG = True  # Optional
+        self.mqtt_client = MQTTClient(self.mqtt_config)
+        self.led = led_instance
+        self.loop = asyncio.get_event_loop()
+
+    async def connect(self):
+        if self.led:
+            self.loop.create_task(self.led.start_pulse([self.led.red, self.led.green]))
+        try:
+            await self.mqtt_client.connect()
+        except OSError as e:
+            print("failed connecting to mqtt: {}".format(e))
+            await self.led.state(True, self.led.red, 2)
+        else:
+            print("connected successfully")
+            await self.mqtt_client.publish(
+                "/esp32/button", "connected", retain=False, qos=1, timeout=None
+            )
+            print("MQTT ok")
+            await self.led.state(True, self.led.green, 2)
+
+
+def test_pulse():
+    l = Led()
+    loop = asyncio.get_event_loop()
+    loop.create_task(l.start_pulse([l.red]))
+    loop.run_forever()
+
+
 async def start_esp32_loop():
     print("start esp32 loop")
+    loop = asyncio.get_event_loop()
     buttons = Buttons(buttons_conf_esp32)
+    led = Led()
+    mqtt = MyMQTT(led)
+    loop.create_task(mqtt.connect())
+
     screen = Screen()
     Controller(buttons, screen)
 
-    mqtt_config = {
-        "client_id": hexlify(unique_id()),
-        "server": "10.1.1.5",
-        "port": 0,
-        "user": "homeassistant",
-        "password": "***REMOVED***",
-        "keepalive": 60,
-        "ping_interval": 0,
-        "ssl": False,
-        "ssl_params": {},
-        "response_time": 10,
-        "clean_init": True,
-        "clean": True,
-        "max_repubs": 4,
-        "will": None,
-        "subs_cb": lambda *_: None,
-        "wifi_coro": wifi_coro,
-        "connect_coro": connect_coro,
-        "ssid": "***REMOVED***",
-        "wifi_pw": "***REMOVED***",
-    }
-    print("start mqtt client")
-    MQTTClient.DEBUG = True  # Optional
-    mqtt_client = MQTTClient(mqtt_config)
-
-    # buttons_pressed = get_buttons_pressed(buttons_conf_esp32)
     buttons_pressed = buttons.get_pressed()
     print(buttons_pressed)
-
-    screen.print("Connect MQTT")
-
-    try:
-        await mqtt_client.connect()
-    except OSError as e:
-        m = "failed connecting to mqtt: {}".format(e)
-        screen.print("MQTT fail")
-    else:
-        print("connected successfully")
-        await mqtt_client.publish(
-            "/esp32/button", "connected", retain=False, qos=1, timeout=None
-        )
-        screen.print("MQTT ok")
 
     await asyncio.sleep(60)
     screen.print("ZZzzz")
