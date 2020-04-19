@@ -1,6 +1,6 @@
 import sys
 
-heart = '''
+heart = """
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
@@ -41,9 +41,9 @@ heart = '''
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
-'''
+"""
 
-audio = '''
+audio = """
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
@@ -84,9 +84,9 @@ audio = '''
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
-'''
+"""
 
-party = '''
+party = """
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
@@ -127,9 +127,9 @@ party = '''
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
-'''
+"""
 
-poop = '''
+poop = """
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
@@ -170,9 +170,9 @@ poop = '''
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
-'''
+"""
 
-smiley = '''
+smiley = """
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
@@ -213,9 +213,9 @@ smiley = '''
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
-'''
+"""
 
-tv = '''
+tv = """
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
@@ -256,7 +256,7 @@ tv = '''
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
 1111111111111111111111111111111111111111
-'''
+"""
 
 if sys.platform == "esp32":
     from mqtt_as_timeout import MQTTClient
@@ -274,6 +274,7 @@ if sys.platform == "esp32":
     from machine import Pin
     from ucollections import deque
 else:
+    import paho.mqtt.client as paho_client
     import asyncio
     import PySimpleGUI as sg
     from collections import deque
@@ -302,9 +303,11 @@ buttons_conf_other = {
     2: {
         "name": "2",
         "led_out": 16,
-        "commands": {"Sound on<img>{}".format(audio): "/sound on",
-                     "Sound off<img>{}".format(audio): "/sound off",
-                     "Avbryt": ""},
+        "commands": {
+            "Sound on<img>{}".format(audio): "/sound on",
+            "Sound off<img>{}".format(audio): "/sound off",
+            "Avbryt": "",
+        },
         "enabled": True,
     },
     3: {"name": "3", "led_out": 17, "commands": {}, "enabled": True},
@@ -324,7 +327,6 @@ buttons_conf_esp32 = {
     34: {"name": "6", "led_out": 18, "commands": {}, "enabled": True},
     39: {"name": "7", "led_out": 23, "commands": {}, "enabled": True},
 }
-
 
 
 def chain(*p):
@@ -349,6 +351,76 @@ async def connect_coro(client_instance):
     client_instance.publish(
         "/esp32/button", "established", retain=False, qos=1, timeout=None
     )
+
+
+class MyMQTT:
+    def __init__(self, led_instance=None):
+        self.mqtt_config = {
+            "client_id": hexlify(unique_id()),
+            "server": "10.1.1.5",
+            "port": 0,
+            "user": "homeassistant",
+            "password": "***REMOVED***",
+            "keepalive": 60,
+            "ping_interval": 0,
+            "ssl": False,
+            "ssl_params": {},
+            "response_time": 10,
+            "clean_init": True,
+            "clean": True,
+            "max_repubs": 4,
+            "will": None,
+            "subs_cb": lambda *_: None,
+            "wifi_coro": wifi_coro,
+            "connect_coro": connect_coro,
+            "ssid": "***REMOVED***",
+            "wifi_pw": "***REMOVED***",
+            "default_topic": "/esp32_buttons",
+        }
+        self.led = led_instance
+        self.loop = asyncio.get_event_loop()
+        print("start mqtt client")
+        if sys.platform == "esp32":
+            MQTTClient.DEBUG = True  # Optional
+            self.mqtt_client = MQTTClient(self.mqtt_config)
+        else:
+            self.mqtt_client = paho_client.Client()
+            self.mqtt_client.username_pw_set(
+                self.mqtt_config["user"], self.mqtt_config["password"]
+            )
+            self.loop.create_task(self.connect())
+
+    async def connect(self):
+        if sys.platform == "esp32":
+            if self.led:
+                self.loop.create_task(
+                    self.led.start_pulse([self.led.red, self.led.green])
+                )
+            try:
+                await self.mqtt_client.connect()
+            except OSError as e:
+                print("failed connecting to mqtt: {}".format(e))
+                await self.led.state(True, self.led.red, 2)
+            else:
+                print("connected successfully")
+                await self.mqtt_client.publish(
+                    "/esp32/button", "connected", retain=False, qos=1, timeout=None
+                )
+                print("MQTT ok")
+                await self.led.state(True, self.led.green, 2)
+        else:
+            self.mqtt_client.connect(self.mqtt_config["server"])
+
+    def disconnect(self):
+        self.mqtt_client.disconnect()
+
+    def publish(self, message, topic=None):
+        if sys.platform == "esp32":
+            pass
+        else:
+            self.mqtt_client.publish(
+                topic if topic else self.mqtt_config["default_topic"], message
+            )
 
 
 class Buttons:
@@ -391,6 +463,11 @@ class Screen:
         self.enabled = True
         self.text = text
         self.p = sys.platform
+        self.x_text = 0
+        self.y_text = 0
+        self.x_image = 10
+        self.y_image = 10
+
         if self.p == "esp32":
             i2c = I2C(-1, scl=Pin(self.scl_pin), sda=Pin(self.sda_pin))
             self.oled = ssd1306.SSD1306_I2C(self.width, self.height, i2c)
@@ -406,6 +483,7 @@ class Screen:
         if self.p == "esp32":
             self.oled.fill(0)
             self.oled.show()
+            self.oled.poweroff()
         else:
             self.print("")
 
@@ -427,8 +505,26 @@ class Screen:
     def _print_oled(self):
         text = self.q.popleft()
         print("printing {} to oled".format(text))
+
+        both = text.split("<img>")
+        img = None
+        if len(both) == 2:
+            text, img = both
+        else:
+            (text,) = both
+
         self.oled.fill(0)
-        self.oled.text(text, 0, 0)
+        self.oled.text(text, self.x_text, self.y_text)
+
+        if img:
+            self._display_image(img)
+
+        self.oled.show()
+
+    def _display_image(self, img):
+        for y, row in enumerate(img):
+            for x, c in enumerate(row):
+                self.oled.pixel(x + self.x_image, y + self.y_image, (1, 0)[c])
         self.oled.show()
 
     def stop(self):
@@ -488,10 +584,12 @@ class Controller:
         button_instance: Buttons,
         screen_instance: Screen,
         led_instance: Led = None,
+        mqtt_instance: MyMQTT = None,
     ):
         self.b = button_instance
         self.s = screen_instance
         self.l = led_instance
+        self.m = mqtt_instance
         self.enabled = True
         self.option_timout = 5
         self.option_timers = {}
@@ -540,7 +638,7 @@ class Controller:
         # switch to next option
         self.current_option += 1
         next_option = list(options["commands"].keys())[self.current_option]
-        self.s.print("{} [{}]".format(next_option, self.option_timout))
+        # self.s.print("{} [{}]".format(next_option, self.option_timout))
 
         # remember which button was pressed
         self.current_button = button_key
@@ -549,17 +647,22 @@ class Controller:
         _loop.create_task(self.start_timer(next_option))
 
     async def start_timer(self, option_text):
-        print('option_timers before {}'.format(self.option_timers))
+        print("option_timers before {}".format(self.option_timers))
         self.option_timers = {}
-        print('option_timers after {}'.format(self.option_timers))
+        print("option_timers after {}".format(self.option_timers))
         ref = random.randint(1, 1000000)
         self.option_timers[ref] = self.option_timout
         timer_left = self.option_timers[ref]
         while ref in self.option_timers and timer_left >= 1:
             timer_left -= 1
-            self.s.print("{} [{}]".format(option_text, timer_left + 1))
+            if "<img>" in option_text:
+                self.s.print(
+                    option_text.replace("<img>", " [{}] <img>".format(timer_left + 1))
+                )
+            else:
+                self.s.print("{} [{}]".format(option_text, timer_left + 1))
             await asyncio.sleep(1)
-            print('count down current option timers {}'.format(self.option_timers))
+            print("count down current option timers {}".format(self.option_timers))
         if ref in self.option_timers:
             # this means no other key been pressed and timed out
             print(
@@ -567,6 +670,9 @@ class Controller:
                     self.current_button, self.current_option
                 )
             )
+            if self.m:
+                self.m.publish("{},{}".format(self.current_button, self.current_option))
+
             self.current_option = 0
             self.current_button = 0
             empty_queue(self.b.q)
@@ -603,52 +709,6 @@ def init_esp32():
     loop.run_forever()
 
 
-class MyMQTT:
-    def __init__(self, led_instance=None):
-        self.mqtt_config = {
-            "client_id": hexlify(unique_id()),
-            "server": "10.1.1.5",
-            "port": 0,
-            "user": "homeassistant",
-            "password": "***REMOVED***",
-            "keepalive": 60,
-            "ping_interval": 0,
-            "ssl": False,
-            "ssl_params": {},
-            "response_time": 10,
-            "clean_init": True,
-            "clean": True,
-            "max_repubs": 4,
-            "will": None,
-            "subs_cb": lambda *_: None,
-            "wifi_coro": wifi_coro,
-            "connect_coro": connect_coro,
-            "ssid": "***REMOVED***",
-            "wifi_pw": "***REMOVED***",
-        }
-        print("start mqtt client")
-        MQTTClient.DEBUG = True  # Optional
-        self.mqtt_client = MQTTClient(self.mqtt_config)
-        self.led = led_instance
-        self.loop = asyncio.get_event_loop()
-
-    async def connect(self):
-        if self.led:
-            self.loop.create_task(self.led.start_pulse([self.led.red, self.led.green]))
-        try:
-            await self.mqtt_client.connect()
-        except OSError as e:
-            print("failed connecting to mqtt: {}".format(e))
-            await self.led.state(True, self.led.red, 2)
-        else:
-            print("connected successfully")
-            await self.mqtt_client.publish(
-                "/esp32/button", "connected", retain=False, qos=1, timeout=None
-            )
-            print("MQTT ok")
-            await self.led.state(True, self.led.green, 2)
-
-
 def test_pulse():
     l = Led()
     loop = asyncio.get_event_loop()
@@ -665,7 +725,7 @@ async def start_esp32_loop():
     loop.create_task(mqtt.connect())
 
     screen = Screen()
-    Controller(buttons, screen)
+    Controller(buttons, screen, mqtt)
 
     buttons_pressed = buttons.get_pressed()
     print(buttons_pressed)
@@ -674,6 +734,7 @@ async def start_esp32_loop():
     screen.print("ZZzzz")
     await asyncio.sleep(3)
     screen.clear()
+    mqtt.disconnect()
     machine.reset()
 
 
@@ -682,29 +743,37 @@ def init_other():
     led = Led()
     buttons = Buttons(buttons_conf_other)
     screen = Screen(text_ref)
-    Controller(buttons, screen, led)
+    mqtt = MyMQTT()
+    Controller(buttons, screen, led, mqtt)
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(other_loop(buttons, text_ref))
+    loop.run_until_complete(other_loop(buttons, text_ref, mqtt))
 
 
 def draw_image(image_data, graph_instance, size=1):
-    pixel_rows = reversed(image_data.strip().split('\n'))
+    pixel_rows = reversed(image_data.strip().split("\n"))
     row_idx, col_idx = (0, 0)
     for row in pixel_rows:
         row_idx += size
         col_idx = 0
         for col in row:
             col_idx += size
-            if col == '0':
-                graph_instance.DrawPoint((col_idx, row_idx), size, color='green')
+            if col == "0":
+                graph_instance.DrawPoint((col_idx, row_idx), size, color="green")
 
 
-async def other_loop(b, _text):
+async def other_loop(b, _text, mqtt):
     layout = [
         [sg.Text("Press 1 or 2")],
         [sg.Text("", size=(18, 1), key="text")],
-        [sg.Graph(canvas_size=(40, 40), graph_bottom_left=(0, 0), graph_top_right=(40, 40), background_color='white',
-                  key='graph')],
+        [
+            sg.Graph(
+                canvas_size=(40, 40),
+                graph_bottom_left=(0, 0),
+                graph_top_right=(40, 40),
+                background_color="white",
+                key="graph",
+            )
+        ],
         [sg.Button("OK", key="OK")],
     ]
 
@@ -715,7 +784,7 @@ async def other_loop(b, _text):
         event, values = window.read(timeout=100)
         await asyncio.sleep(0)
 
-        both = _text[0].split('<img>')
+        both = _text[0].split("<img>")
         img = None
         if len(both) == 2:
             text, img = both
@@ -723,9 +792,9 @@ async def other_loop(b, _text):
             (text,) = both
 
         window["text"].update(value=text)
-        window['graph'].Erase()
+        window["graph"].Erase()
         if img:
-            draw_image(img, window['graph'])
+            draw_image(img, window["graph"])
 
         if event in ("OK", None):
             print(event, "exiting")
@@ -735,6 +804,7 @@ async def other_loop(b, _text):
                 print("add {} to queue".format(event))
                 b.mock_press(event)
     window.close()
+    mqtt.disconnect()
 
 
 if __name__ == "__main__":
