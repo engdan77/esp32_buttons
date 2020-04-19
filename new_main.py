@@ -404,7 +404,11 @@ class MyMQTT:
             else:
                 print("connected successfully")
                 await self.mqtt_client.publish(
-                    "/esp32/button", "connected", retain=False, qos=1, timeout=None
+                    self.mqtt_config["default_topic"],
+                    "connected",
+                    retain=False,
+                    qos=1,
+                    timeout=None,
                 )
                 print("MQTT ok")
                 await self.led.state(True, self.led.green, 2)
@@ -415,12 +419,9 @@ class MyMQTT:
         self.mqtt_client.disconnect()
 
     def publish(self, message, topic=None):
-        if sys.platform == "esp32":
-            pass
-        else:
-            self.mqtt_client.publish(
-                topic if topic else self.mqtt_config["default_topic"], message
-            )
+        self.mqtt_client.publish(
+            topic if topic else self.mqtt_config["default_topic"], message
+        )
 
 
 class Buttons:
