@@ -317,7 +317,7 @@ buttons_conf_esp32 = {
     26: {
         "name": "1",
         "led_out": 16,
-        "commands": {"Barn TV": "/tv_command barn_tv", "TV4": "/tv_command tv4"},
+        "commands": {"Barn TV<img>{}".format(tv): "/tv_command barn_tv", "TV4<img>{}".format(poop): "/tv_command tv4"},
         "enabled": True,
     },
     25: {"name": "2", "led_out": 19, "commands": {}, "enabled": False},
@@ -327,6 +327,17 @@ buttons_conf_esp32 = {
     34: {"name": "6", "led_out": 18, "commands": {}, "enabled": True},
     39: {"name": "7", "led_out": 23, "commands": {}, "enabled": True},
 }
+
+
+def get_led_pin(conf, button_number=None):
+    pins = []
+    for k, v in conf.items():
+        if 'led_out' in v and isinstance(v['led_out'], int):
+            if button_number and v['name'] == str(button_number):
+                return [v['led_out']]
+            else:
+                pins.append(v['led_out'])
+    return pins
 
 
 def chain(*p):
@@ -432,12 +443,20 @@ class Buttons:
         _loop = asyncio.get_event_loop()
         _loop.create_task(self.loop_process())
 
-    async def loop_process(self, sleep_time=0.1):
+    async def loop_process(self, sleep_time=0.01, debounce_times=20):
         if sys.platform == "esp32":
             while self.enabled:
                 for k, v in self.config.items():
-                    if Pin(k, Pin.IN).value():
-                        self.q.append(v.get("name", ""))
+                    p = Pin(k, Pin.IN)
+                    if p.value():
+                        # debounce
+                        active = 0
+                        for _ in range(debounce_times):
+                            if p.value():
+                                active += 1
+                            await asyncio.sleep(sleep_time)
+                        if active == debounce_times:
+                            self.q.append(v.get("name", ""))
                 await asyncio.sleep(sleep_time)
 
     def get_pressed(self):
@@ -454,7 +473,7 @@ class Buttons:
 
 class Screen:
     def __init__(
-        self, text=[""], scl_pin=22, sda_pin=21, width=128, height=64, max_queue=10
+            self, text=[""], scl_pin=22, sda_pin=21, width=128, height=64, max_queue=10
     ):
         self.q = deque((), 10)
         self.scl_pin = scl_pin
@@ -478,15 +497,17 @@ class Screen:
 
     def print(self, text):
         self.q.append(text)
-        print('adding text "{}" -> {}'.format(text, self.q))
+        # print('adding text "{}" -> {}'.format(text, self.q))
 
     def clear(self):
         if self.p == "esp32":
             self.oled.fill(0)
             self.oled.show()
-            self.oled.poweroff()
         else:
             self.print("")
+
+    def turn_off(self):
+        self.oled.poweroff()
 
     async def loop_process(self, sleep_time=0.1):
         print("starting screen loop")
@@ -494,7 +515,7 @@ class Screen:
         while self.enabled:
             if self.q:
                 if self.p == "esp32":
-                    print("found new message in queue")
+                    # print("found new message in queue")
                     self._print_oled()
                 else:
                     self._print_mock()
@@ -505,7 +526,7 @@ class Screen:
 
     def _print_oled(self):
         text = self.q.popleft()
-        print("printing {} to oled".format(text))
+        # print("printing {} to oled".format(text))
 
         both = text.split("<img>")
         img = None
@@ -522,10 +543,10 @@ class Screen:
 
         self.oled.show()
 
-    def _display_image(self, img):
-        for y, row in enumerate(img):
+    def _display_image(self, img, x_offset=0, y_offset=10):
+        for y, row in enumerate(img.strip().split('\n')):
             for x, c in enumerate(row):
-                self.oled.pixel(x + self.x_image, y + self.y_image, (1, 0)[c])
+                self.oled.pixel(x_offset + x + self.x_image, y_offset + y + self.y_image, (1, 0)[int(c)])
         self.oled.show()
 
     def stop(self):
@@ -536,13 +557,18 @@ def turn_on(pin):
     Pin(pin, Pin.OUT).value(True)
 
 
+def turn_off(pin):
+    Pin(pin, Pin.OUT).value(False)
+
+
 class Led:
-    def __init__(self, pin_red=13, pin_green=12, pin_blue=14, frequency=64):
+    def __init__(self, button_pins=[], pin_red=13, pin_green=12, pin_blue=14, frequency=64):
         self.red = pin_red
         self.green = pin_green
         self.blue = pin_blue
         self.pulse_on = False
         self.frequency = frequency
+        self.button_pins = button_pins
         self.turn_all_off()
 
     async def start_pulse(self, colors, speed=2):
@@ -572,20 +598,21 @@ class Led:
                 turn_on(p)
             if for_time:
                 await asyncio.sleep(for_time)
-                self.turn_all_off()
+                for p in colors:
+                    turn_off(p)
 
     def turn_all_off(self):
-        for p in (self.red, self.green, self.blue):
+        for p in (self.red, self.green, self.blue) + tuple(self.button_pins):
             Pin(p, Pin.OUT).value(False)
 
 
 class Controller:
     def __init__(
-        self,
-        button_instance: Buttons,
-        screen_instance: Screen,
-        led_instance: Led = None,
-        mqtt_instance: MyMQTT = None,
+            self,
+            button_instance: Buttons,
+            screen_instance: Screen,
+            led_instance: Led = None,
+            mqtt_instance: MyMQTT = None,
     ):
         self.b = button_instance
         self.s = screen_instance
@@ -596,8 +623,7 @@ class Controller:
         self.option_timers = {}
         self.current_button = 0
         self.current_option = -1
-        _loop = asyncio.get_event_loop()
-        _loop.create_task(self.loop_process())
+        asyncio.get_event_loop().create_task(self.loop_process())
 
     async def loop_process(self, sleep_time=0.1):
         while self.enabled:
@@ -613,8 +639,13 @@ class Controller:
                 button_key, type(button_key)
             )
         )
-        print("config")
-        print(self.b.config)
+        if sys.platform == 'esp32':
+            all_button_leds = get_led_pin(self.b.config)
+            await self.l.state(False, all_button_leds)
+            p = get_led_pin(self.b.config, button_key)
+            print('turn on button led {} with button {}'.format(p, button_key))
+            _loop = asyncio.get_event_loop()
+            _loop.create_task(self.l.state(True, p, 2))
         try:
             options = next(
                 iter(
@@ -631,7 +662,7 @@ class Controller:
             print("button not found in config")
             return
         if not self.current_button == button_key or self.current_option + 1 >= len(
-            options["commands"]
+                options["commands"]
         ):
             # if you switch button with new options
             self.current_option = -1
@@ -648,9 +679,7 @@ class Controller:
         _loop.create_task(self.start_timer(next_option))
 
     async def start_timer(self, option_text):
-        print("option_timers before {}".format(self.option_timers))
         self.option_timers = {}
-        print("option_timers after {}".format(self.option_timers))
         ref = random.randint(1, 1000000)
         self.option_timers[ref] = self.option_timout
         timer_left = self.option_timers[ref]
@@ -663,7 +692,7 @@ class Controller:
             else:
                 self.s.print("{} [{}]".format(option_text, timer_left + 1))
             await asyncio.sleep(1)
-            print("count down current option timers {}".format(self.option_timers))
+            # print("count down current option timers {}".format(self.option_timers))
         if ref in self.option_timers:
             # this means no other key been pressed and timed out
             print(
@@ -672,7 +701,9 @@ class Controller:
                 )
             )
             if self.m:
-                self.m.publish("{},{}".format(self.current_button, self.current_option))
+                msg = "{},{}".format(self.current_button, self.current_option)
+                print('mqtt publish {}'.format(msg))
+                self.m.publish(msg)
 
             self.current_option = 0
             self.current_button = 0
@@ -721,12 +752,13 @@ async def start_esp32_loop():
     print("start esp32 loop")
     loop = asyncio.get_event_loop()
     buttons = Buttons(buttons_conf_esp32)
-    led = Led()
+    led = Led(buttons_conf_esp32)
     mqtt = MyMQTT(led)
     loop.create_task(mqtt.connect())
 
     screen = Screen()
-    Controller(buttons, screen, mqtt)
+    screen.print('Hej..')
+    Controller(buttons, screen, led, mqtt)
 
     buttons_pressed = buttons.get_pressed()
     print(buttons_pressed)
@@ -734,7 +766,7 @@ async def start_esp32_loop():
     await asyncio.sleep(60)
     screen.print("ZZzzz")
     await asyncio.sleep(3)
-    screen.clear()
+    screen.turn_off()
     mqtt.disconnect()
     machine.reset()
 
