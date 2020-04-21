@@ -562,14 +562,17 @@ def turn_off(pin):
 
 
 class Led:
-    def __init__(self, button_pins=[], pin_red=13, pin_green=12, pin_blue=14, frequency=64):
+    def __init__(self, button_pins=[], pin_red=13, pin_green=12, pin_blue=14, frequency=64, interval=0.05):
         self.red = pin_red
         self.green = pin_green
         self.blue = pin_blue
         self.pulse_on = False
         self.frequency = frequency
         self.button_pins = button_pins
-        self.turn_all_off()
+        self.led_timers = {}
+        self.enabled = True
+        self.turn_all_off(force=True)
+        asyncio.get_event_loop().create_task(self.timer_loop(interval))
 
     async def start_pulse(self, colors, speed=2):
         self.pulse_on = True
@@ -588,22 +591,49 @@ class Led:
         self.pulse_on = False
         self.turn_all_off()
 
-    async def state(self, on_state, colors, for_time=None):
-        colors = [colors] if isinstance(colors, int) else colors
+    async def state(self, on_state, pins, for_time=None):
+        pins = [pins] if isinstance(pins, int) else pins
         self.turn_all_off()
         if not on_state:
-            return
+            for p in pins:
+                self.remove_timer(p)
+                turn_off(p)
         else:
-            for p in colors:
+            for p in pins:
                 turn_on(p)
-            if for_time:
-                await asyncio.sleep(for_time)
-                for p in colors:
-                    turn_off(p)
+                if for_time:
+                    self.add_timer(p, for_time)
 
-    def turn_all_off(self):
-        for p in (self.red, self.green, self.blue) + tuple(self.button_pins):
-            Pin(p, Pin.OUT).value(False)
+    def add_timer(self, pin, for_time):
+        if for_time >= self.led_timers.get(pin, 0):
+            self.led_timers[pin] = for_time
+
+    def remove_timer(self, pin):
+        try:
+            self.led_timers.pop(pin)
+        except KeyError:
+            pass
+
+    async def timer_loop(self, interval=0.5):
+        while self.enabled:
+            for p, t in self.led_timers.items():
+                if float(t) <= float(0):
+                    turn_off(p)
+                    self.led_timers.pop(p)
+                    continue
+                self.led_timers[p] = float(self.led_timers[p]) - float(interval)
+            await asyncio.sleep(interval)
+
+    def stop(self):
+        self.turn_all_off(force=True)
+        self.enabled = False
+
+    def turn_all_off(self, force=True):
+        for p in self.led_timers.keys():
+            turn_off(p)
+        if force:
+            for p in (self.red, self.green, self.blue) + tuple(self.button_pins):
+                turn_off(p)
 
 
 class Controller:
@@ -623,6 +653,7 @@ class Controller:
         self.option_timers = {}
         self.current_button = 0
         self.current_option = -1
+        self.last_button_pressed = None
         asyncio.get_event_loop().create_task(self.loop_process())
 
     async def loop_process(self, sleep_time=0.1):
@@ -640,8 +671,10 @@ class Controller:
             )
         )
         if sys.platform == 'esp32':
-            all_button_leds = get_led_pin(self.b.config)
-            await self.l.state(False, all_button_leds)
+            if self.last_button_pressed is None or self.last_button_pressed == button_key:
+                all_button_leds = get_led_pin(self.b.config)
+                await self.l.state(False, all_button_leds)
+                self.last_button_pressed = button_key
             p = get_led_pin(self.b.config, button_key)
             _loop = asyncio.get_event_loop()
             _loop.create_task(self.l.state(True, p, 5))
@@ -768,6 +801,8 @@ async def start_esp32_loop():
     await asyncio.sleep(3)
     screen.turn_off()
     mqtt.disconnect()
+    led.stop()
+    await asyncio.sleep(1)
     machine.reset()
 
 
