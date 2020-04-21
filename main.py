@@ -434,6 +434,10 @@ class MyMQTT:
             topic if topic else self.mqtt_config["default_topic"], message
         )
 
+    def is_connected(self):
+        r = self.mqtt_client.isconnected()
+        return r
+
 
 class Buttons:
     def __init__(self, button_config, max_queue=10):
@@ -643,7 +647,8 @@ class Controller:
             screen_instance: Screen,
             led_instance: Led = None,
             mqtt_instance: MyMQTT = None,
-            inactivity_timeout = 20
+            inactivity_timeout = 20,
+            wifi_timeout = 10
     ):
         self.b = button_instance
         self.s = screen_instance
@@ -654,6 +659,7 @@ class Controller:
         self.option_timers = {}
         self.current_button = 0
         self.current_option = -1
+        self.wifi_timeout = wifi_timeout
         self.last_button_pressed = None
         self.inactivity_timeout = self.current_inactivity_countdown = inactivity_timeout
         asyncio.get_event_loop().create_task(self.loop_process())
@@ -664,10 +670,13 @@ class Controller:
         while self.enabled and self.current_inactivity_countdown >= 0:
             self.current_inactivity_countdown -= 1
             await asyncio.sleep(1)
+        msg = 'Zzzzz'
+        self.s.print(msg)
+        await asyncio.sleep(2)
         self.s.turn_off()
         self.m.disconnect()
         self.l.stop()
-        print('Zzzzzz')
+        print(msg)
         wakeup_pins = self.b.config.keys()
         esp32_deep_sleep(wakeup_pins)
 
@@ -749,10 +758,25 @@ class Controller:
                 )
             )
             if self.m:
-                msg = "{},{}".format(self.current_button, self.current_option)
-                print('mqtt publish {}'.format(msg))
-                await self.m.publish(msg)
-                print('mqtt sent')
+                connected = True
+                count_down = float(self.wifi_timeout)
+                interval = 0.05
+                if not self.m.is_connected():
+                    connected = False
+                    self.s.print('waiting')
+                    while count_down >= 0:
+                        await asyncio.sleep(interval)
+                        count_down -= interval
+                        if self.m.is_connected():
+                            connected = True
+                            break
+                if connected:
+                    msg = "{},{}".format(self.current_button, self.current_option)
+                    print('mqtt publish {}'.format(msg))
+                    await self.m.publish(msg)
+                    print('mqtt sent')
+                else:
+                    self.s.print('not connected')
 
             self.current_option = 0
             self.current_button = 0
@@ -803,8 +827,8 @@ async def start_esp32_loop():
     screen.print('Daniels knappar')
     Controller(buttons, screen, led, mqtt)
 
-    buttons_pressed = buttons.get_pressed()
-    print(buttons_pressed)
+    # buttons_pressed = buttons.get_pressed()
+    # print(buttons_pressed)
 
     # await asyncio.sleep(60)
     # screen.print("ZZzzz")
