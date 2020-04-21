@@ -643,6 +643,7 @@ class Controller:
             screen_instance: Screen,
             led_instance: Led = None,
             mqtt_instance: MyMQTT = None,
+            inactivity_timeout = 20
     ):
         self.b = button_instance
         self.s = screen_instance
@@ -654,7 +655,20 @@ class Controller:
         self.current_button = 0
         self.current_option = -1
         self.last_button_pressed = None
+        self.inactivity_timeout = self.current_inactivity_countdown = inactivity_timeout
         asyncio.get_event_loop().create_task(self.loop_process())
+        if sys.platform == 'esp32':
+            asyncio.get_event_loop().create_task(self.inactivity_timeout_loop())
+
+    async def inactivity_timeout_loop(self):
+        while self.enabled and self.current_inactivity_countdown >= 0:
+            self.current_inactivity_countdown -= 1
+            await asyncio.sleep(1)
+        self.s.turn_off()
+        self.m.disconnect()
+        self.l.stop()
+        wakeup_pins = self.b.config.keys()
+        esp32_deep_sleep(wakeup_pins)
 
     async def loop_process(self, sleep_time=0.1):
         while self.enabled:
@@ -671,6 +685,7 @@ class Controller:
             )
         )
         if sys.platform == 'esp32':
+            self.current_inactivity_countdown = self.inactivity_timeout
             if self.last_button_pressed is None or self.last_button_pressed == button_key:
                 all_button_leds = get_led_pin(self.b.config)
                 await self.l.state(False, all_button_leds)
@@ -773,13 +788,6 @@ def init_esp32():
     loop.run_forever()
 
 
-def test_pulse():
-    l = Led()
-    loop = asyncio.get_event_loop()
-    loop.create_task(l.start_pulse([l.red]))
-    loop.run_forever()
-
-
 async def start_esp32_loop():
     print("start esp32 loop")
     loop = asyncio.get_event_loop()
@@ -790,20 +798,20 @@ async def start_esp32_loop():
     loop.create_task(mqtt.connect())
 
     screen = Screen()
-    screen.print('Hej..')
+    screen.print('Daniels knappar')
     Controller(buttons, screen, led, mqtt)
 
     buttons_pressed = buttons.get_pressed()
     print(buttons_pressed)
 
-    await asyncio.sleep(60)
-    screen.print("ZZzzz")
-    await asyncio.sleep(3)
-    screen.turn_off()
-    mqtt.disconnect()
-    led.stop()
-    await asyncio.sleep(1)
-    machine.reset()
+    # await asyncio.sleep(60)
+    # screen.print("ZZzzz")
+    # await asyncio.sleep(3)
+    # screen.turn_off()
+    # mqtt.disconnect()
+    # led.stop()
+    # await asyncio.sleep(1)
+    # machine.reset()
 
 
 def init_other():
