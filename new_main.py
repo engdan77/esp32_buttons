@@ -429,8 +429,8 @@ class MyMQTT:
     def disconnect(self):
         self.mqtt_client.disconnect()
 
-    def publish(self, message, topic=None):
-        self.mqtt_client.publish(
+    async def publish(self, message, topic=None):
+        await self.mqtt_client.publish(
             topic if topic else self.mqtt_config["default_topic"], message
         )
 
@@ -667,6 +667,7 @@ class Controller:
         self.s.turn_off()
         self.m.disconnect()
         self.l.stop()
+        print('Zzzzzz')
         wakeup_pins = self.b.config.keys()
         esp32_deep_sleep(wakeup_pins)
 
@@ -692,7 +693,7 @@ class Controller:
                 self.last_button_pressed = button_key
             p = get_led_pin(self.b.config, button_key)
             _loop = asyncio.get_event_loop()
-            _loop.create_task(self.l.state(True, p, 5))
+            _loop.create_task(self.l.state(True, p, 4))
         try:
             options = next(
                 iter(
@@ -750,7 +751,8 @@ class Controller:
             if self.m:
                 msg = "{},{}".format(self.current_button, self.current_option)
                 print('mqtt publish {}'.format(msg))
-                self.m.publish(msg)
+                await self.m.publish(msg)
+                print('mqtt sent')
 
             self.current_option = 0
             self.current_button = 0
