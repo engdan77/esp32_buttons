@@ -443,7 +443,7 @@ class Buttons:
         _loop = asyncio.get_event_loop()
         _loop.create_task(self.loop_process())
 
-    async def loop_process(self, sleep_time=0.01, debounce_times=20):
+    async def loop_process(self, sleep_time=0.01, debounce_times=15):
         if sys.platform == "esp32":
             while self.enabled:
                 for k, v in self.config.items():
@@ -643,9 +643,8 @@ class Controller:
             all_button_leds = get_led_pin(self.b.config)
             await self.l.state(False, all_button_leds)
             p = get_led_pin(self.b.config, button_key)
-            print('turn on button led {} with button {}'.format(p, button_key))
             _loop = asyncio.get_event_loop()
-            _loop.create_task(self.l.state(True, p, 2))
+            _loop.create_task(self.l.state(True, p, 5))
         try:
             options = next(
                 iter(
@@ -752,7 +751,8 @@ async def start_esp32_loop():
     print("start esp32 loop")
     loop = asyncio.get_event_loop()
     buttons = Buttons(buttons_conf_esp32)
-    led = Led(buttons_conf_esp32)
+    led_pins = get_led_pin(buttons_conf_esp32)
+    led = Led(led_pins)
     mqtt = MyMQTT(led)
     loop.create_task(mqtt.connect())
 
