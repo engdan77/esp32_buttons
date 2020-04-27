@@ -57,8 +57,12 @@ def get_mqtt_config(user, password, wifi_coro, connect_coro, ssid, wifi_pw, clie
             }
 
 
-def start_web_repl():
+async def start_web_repl(**args):
     print('start ext command')
+    self = args.get('self', None)
+    if self:
+        self.s.print('webrepl')
+    await asyncio.sleep(3)
     if sys.platform == 'esp32':
         stop_all_wifi()
         start_ap('my_buttons')
@@ -549,7 +553,7 @@ class Controller:
                     else:
                         if 'func:' in cmd:
                             _, func = cmd.split(':')
-                            globals()[func]()
+                            await globals()[func](self=self)
                         await self.m.publish(cmd)
                         print('mqtt sent')
                 else:
