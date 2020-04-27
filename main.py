@@ -11,6 +11,8 @@ if sys.platform == "esp32":
     import uasyncio as asyncio
     from machine import Pin
     from ucollections import deque
+    from mywifi import stop_all_wifi, start_ap
+    import webrepl
 
 else:
     from config import buttons_conf_other
@@ -53,6 +55,14 @@ def get_mqtt_config(user, password, wifi_coro, connect_coro, ssid, wifi_pw, clie
                 "wifi_pw": wifi_pw,
                 "default_topic": "/esp32_buttons",
             }
+
+
+def start_web_repl():
+    print('start ext command')
+    if sys.platform == 'esp32':
+        stop_all_wifi()
+        start_ap('my_buttons')
+        webrepl.start_foreground()
 
 
 def chain(*p):
@@ -146,28 +156,36 @@ class MyMQTT:
             )
             self.loop.create_task(self.connect())
 
+    async def esp32_connect(self):
+        if self.led:
+            self.loop.create_task(
+                self.led.start_pulse([self.led.red, self.led.green])
+            )
+        try:
+            await self.mqtt_client.connect()
+        except OSError as e:
+            print("failed connecting to mqtt: {}".format(e))
+            await self.led.state(True, self.led.red, 2)
+            return False
+        else:
+            print("connected successfully")
+            await self.mqtt_client.publish(
+                self.mqtt_config["default_topic"],
+                "connected",
+                retain=False,
+                qos=1,
+                timeout=None,
+            )
+            print("connected to mqtt")
+            await self.led.state(True, self.led.green, 2)
+            return True
+
     async def connect(self):
         if sys.platform == "esp32":
-            if self.led:
-                self.loop.create_task(
-                    self.led.start_pulse([self.led.red, self.led.green])
-                )
-            try:
-                await self.mqtt_client.connect()
-            except OSError as e:
-                print("failed connecting to mqtt: {}".format(e))
-                await self.led.state(True, self.led.red, 2)
-            else:
-                print("connected successfully")
-                await self.mqtt_client.publish(
-                    self.mqtt_config["default_topic"],
-                    "connected",
-                    retain=False,
-                    qos=1,
-                    timeout=None,
-                )
-                print("MQTT ok")
-                await self.led.state(True, self.led.green, 2)
+            for _ in range(3):
+                connected = await self.esp32_connect()
+                if connected:
+                    break
         else:
             self.mqtt_client.connect(self.mqtt_config["server"])
             print('connected to mqtt')
@@ -206,6 +224,7 @@ class Buttons:
             while self.enabled:
                 for k, v in self.config.items():
                     p = Pin(k, Pin.IN)
+                    await asyncio.sleep(0)
                     if p.value():
                         # debounce
                         active = 0
@@ -274,7 +293,7 @@ class Screen:
             if self.q:
                 if self.p == "esp32":
                     # print("found new message in queue")
-                    self._print_oled()
+                    await self._print_oled()
                 else:
                     self._print_mock()
             await asyncio.sleep(sleep_time)
@@ -282,11 +301,12 @@ class Screen:
     def _print_mock(self):
         self.text[0] = self.q.popleft()
 
-    def _print_oled(self):
+    async def _print_oled(self):
         text = self.q.popleft()
         # print("printing {} to oled".format(text))
 
         both = text.split("<img>")
+        await asyncio.sleep(0)
         img = None
         if len(both) == 2:
             text, img = both
@@ -296,15 +316,17 @@ class Screen:
         self.oled.fill(0)
         self.oled.text(text, self.x_text, self.y_text)
 
+        await asyncio.sleep(0)
         if img:
-            self._display_image(img)
+            await self._display_image(img)
 
         self.oled.show()
 
-    def _display_image(self, img, x_offset=0, y_offset=10):
+    async def _display_image(self, img, x_offset=0, y_offset=10):
         for y, row in enumerate(img.strip().split('\n')):
             for x, c in enumerate(row):
                 self.oled.pixel(x_offset + x + self.x_image, y_offset + y + self.y_image, (1, 0)[int(c)])
+                asyncio.sleep(0)
         self.oled.show()
 
     def stop(self):
@@ -364,7 +386,7 @@ class Led:
         except KeyError:
             pass
 
-    async def timer_loop(self, interval=0.5):
+    async def timer_loop(self, interval=0.2):
         while self.enabled:
             for p, t in self.led_timers.items():
                 if float(t) <= float(0):
@@ -412,10 +434,10 @@ class Controller:
         if sys.platform == 'esp32':
             asyncio.get_event_loop().create_task(self.inactivity_timeout_loop())
 
-    async def inactivity_timeout_loop(self):
+    async def inactivity_timeout_loop(self, interval=0.2):
         while self.enabled and self.current_inactivity_countdown >= 0:
-            self.current_inactivity_countdown -= 1
-            await asyncio.sleep(1)
+            self.current_inactivity_countdown = float(self.current_inactivity_countdown) - interval
+            await asyncio.sleep(interval)
         msg = 'Zzzzz'
         self.s.print(msg)
         await asyncio.sleep(2)
@@ -464,6 +486,8 @@ class Controller:
         if not options:
             print("button not found in config")
             return
+
+        await asyncio.sleep(0)
         if not self.current_button == button_key or self.current_option + 1 >= len(
                 options["commands"]
         ):
@@ -473,7 +497,6 @@ class Controller:
         # switch to next option
         self.current_option += 1
         next_option = list(options["commands"].keys())[self.current_option]
-        # self.s.print("{} [{}]".format(next_option, self.option_timout))
 
         # remember which button was pressed
         self.current_button = button_key
@@ -495,7 +518,6 @@ class Controller:
             else:
                 self.s.print("{} [{}]".format(option_text, timer_left + 1))
             await asyncio.sleep(1)
-            # print("count down current option timers {}".format(self.option_timers))
         if ref in self.option_timers:
             # this means no other key been pressed and timed out
             print(
@@ -520,7 +542,16 @@ class Controller:
                     msg = "{},{}".format(self.current_button, self.current_option)
                     print('mqtt publish {}'.format(msg))
                     await self.m.publish(msg)
-                    print('mqtt sent')
+                    try:
+                        text, cmd = list(next(iter([v['commands'] for k, v in self.b.config.items() if str(v['name']) == str(self.current_button)])).items())[self.current_option]
+                    except IndexError:
+                        print('could not find config button and option')
+                    else:
+                        if 'func:' in cmd:
+                            _, func = cmd.split(':')
+                            globals()[func]()
+                        await self.m.publish(cmd)
+                        print('mqtt sent')
                 else:
                     self.s.print('not connected')
 
@@ -548,14 +579,18 @@ async def start_esp32_loop():
     print("start esp32 loop")
     loop = asyncio.get_event_loop()
     buttons = Buttons(buttons_conf_esp32)
+    await asyncio.sleep(0)
     led_pins = get_led_pin(buttons_conf_esp32)
+    await asyncio.sleep(0)
     led = Led(led_pins)
+    await asyncio.sleep(0)
     mqtt_config = get_mqtt_config(mqtt_user, mqtt_pass, wifi_coro, connect_coro, ssid, wifi_pw, client_id)
     mqtt = MyMQTT(mqtt_config=mqtt_config, led_instance=led)
+    await asyncio.sleep(0)
     loop.create_task(mqtt.connect())
-
     screen = Screen()
     screen.print('Daniels knappar')
+    await asyncio.sleep(0)
     Controller(buttons, screen, led, mqtt)
 
 
