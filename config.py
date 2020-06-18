@@ -40,7 +40,7 @@ buttons_conf_esp32 = {
         "name": "3",
         "led_out": 17,
         "commands": {"Children TV": "children_tv",
-                     "TV4", "tv4",
+                     "TV4": "tv4",
                      "Fire": "fire",
                      "Party": "party"},
         "enabled": True,

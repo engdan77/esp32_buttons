@@ -13,7 +13,6 @@ if sys.platform == "esp32":
     from ucollections import deque
     from mywifi import stop_all_wifi, start_ap
     import webrepl
-
 else:
     from config import buttons_conf_other
     import paho.mqtt.client as paho_client
