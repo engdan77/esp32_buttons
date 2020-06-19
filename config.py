@@ -93,9 +93,9 @@ buttons_conf_esp32 = {
     },
 }
 
-
+# This is the configuration for the MQTT and Wifi
 mqtt_user = "homeassistant"
-mqtt_pass = "snabel123!"
-ssid = "EDOWIFI"
-wifi_pw = "FEDCBAAAAA"
+mqtt_pass = "foo"
+ssid = "MYWIFI"
+wifi_pw = "bar"
 client_id = "my_buttons"
