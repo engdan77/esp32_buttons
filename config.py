@@ -1,4 +1,16 @@
-from images import audio, poop, tv
+from images import (
+    poop,
+    tv,
+    party,
+    light_bulb_on,
+    light_bulb_off,
+    alarm,
+    speaker,
+    all_off,
+    medium_volume,
+    low_volume,
+    high_volume,
+)
 from ucollections import OrderedDict
 
 buttons_conf_other = {
@@ -17,8 +29,8 @@ buttons_conf_other = {
         "name": "2",
         "led_out": 16,
         "commands": {
-            "Sound on<img>{}".format(audio): "sound_on",
-            "Sound off<img>{}".format(audio): "sound_off",
+            "Sound on<img>{}".format(low_volume): "sound_on",
+            "Sound off<img>{}".format(high_volume): "sound_off",
             "Avbryt": "",
         },
         "enabled": True,
@@ -30,19 +42,26 @@ buttons_conf_esp32 = {
     26: {
         "name": "1",
         "led_out": 16,
-        "commands": OrderedDict([
-            ("Alarm<img>{}".format(tv), "alarm"),
-            ("Starta repl<img>{}".format(poop), "func:start_web_repl")]),
+        "commands": OrderedDict(
+            [
+                ("Alarm<img>{}".format(alarm), "alarm"),
+                ("Starta repl<img>{}".format(poop), "func:start_web_repl"),
+            ]
+        ),
         "enabled": True,
     },
     25: {"name": "2", "led_out": 19, "commands": {}, "enabled": False},
     33: {
         "name": "3",
         "led_out": 17,
-        "commands": OrderedDict([("Children TV", "children_tv"),
-                      ("TV4", "tv4"),
-                      ("Fire", "fire"),
-                      ("Party", "party")]),
+        "commands": OrderedDict(
+            [
+                ("Barn TV<img>{}".format(tv), "children_tv"),
+                ("TV4<img>{}".format(tv), "tv4"),
+                ("Fire<img>{}".format(tv), "fire"),
+                ("Party<img>{}".format(party), "party"),
+            ]
+        ),
         "enabled": True,
     },
     32: {
@@ -55,20 +74,27 @@ buttons_conf_esp32 = {
     34: {
         "name": "6",
         "led_out": 18,
-        "commands": OrderedDict([("Lights off", "lights_off"),
-                                 ("Lights on", "lights_on")]),
+        "commands": OrderedDict(
+            [
+                ("Ljus pa<img>{}".format(light_bulb_off), "lights_off"),
+                ("Ljus av<img>{}".format(light_bulb_on), "lights_on"),
+            ]
+        ),
         "enabled": True,
     },
     39: {
         "name": "7",
         "led_out": 23,
-        "commands": OrderedDict([
-            ("All off", "all_off"),
-            ("Low volume", "low_volume"),
-            ("Medium volume", "medium_volume"),
-            ("High volume", "high_volume"),
-            ("Group audio", "group_audio"),
-            ("Ungroup audio": "ungroup_audio")]),
+        "commands": OrderedDict(
+            [
+                ("Allt av<img>{}".format(all_off), "all_off"),
+                ("Lag volym<img>{}".format(low_volume), "low_volume"),
+                ("Mellan vol<img>{}".format(medium_volume), "medium_volume"),
+                ("Hog vol<img>{}".format(high_volume), "high_volume"),
+                ("Grupp ljud<img>{}".format(speaker), "group_audio"),
+                ("Separat ljud<img>{}".format(speaker), "ungroup_audio"),
+            ]
+        ),
         "enabled": True,
     },
 }
