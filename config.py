@@ -1,26 +1,18 @@
-from images import (
-    poop,
-    tv,
-    party,
-    light_bulb_on,
-    light_bulb_off,
-    alarm,
-    speaker,
-    all_off,
-    medium_volume,
-    low_volume,
-    high_volume,
-)
-from ucollections import OrderedDict
+import sys
+
+if sys.platform == "esp32":
+    from ucollections import OrderedDict
+else:
+    from collections import OrderedDict
 
 buttons_conf_other = {
     1: {
         "name": "1",
         "led_out": 16,
         "commands": {
-            "TV 1<img>{}".format(tv): "barn_tv",
-            "TV 2<img>{}".format(tv): "tv2",
-            "TV 3<img>{}".format(tv): "func:start_web_repl",
+            "TV 1<img>tv": "barn_tv",
+            "TV 2<img>tv": "tv2",
+            "TV 3<img>poop": "func:start_web_repl",
             "Avbryt": "",
         },
         "enabled": True,
@@ -29,8 +21,8 @@ buttons_conf_other = {
         "name": "2",
         "led_out": 16,
         "commands": {
-            "Sound on<img>{}".format(low_volume): "sound_on",
-            "Sound off<img>{}".format(high_volume): "sound_off",
+            "Sound on<img>low_volume": "sound_on",
+            "Sound off<img>high_volume": "sound_off",
             "Avbryt": "",
         },
         "enabled": True,
@@ -44,8 +36,10 @@ buttons_conf_esp32 = {
         "led_out": 16,
         "commands": OrderedDict(
             [
-                ("Alarm<img>{}".format(alarm), "alarm"),
-                ("Starta repl<img>{}".format(poop), "func:start_web_repl"),
+                ("Alarm<img>alarm", "alarm"),
+                ("Smyg pa<img>light_bulb_off", "light_bulb_off"),
+                ("Smyg av<img>light_bulb_on", "light_bulb_on"),
+                ("Starta repl<img>poop", "func:start_web_repl"),
             ]
         ),
         "enabled": True,
@@ -56,10 +50,10 @@ buttons_conf_esp32 = {
         "led_out": 17,
         "commands": OrderedDict(
             [
-                ("Barn TV<img>{}".format(tv), "children_tv"),
-                ("TV4<img>{}".format(tv), "tv4"),
-                ("Fire<img>{}".format(tv), "fire"),
-                ("Party<img>{}".format(party), "party"),
+                ("Barn TV<img>tv", "children_tv"),
+                ("TV4<img>tv", "tv4"),
+                ("Fire<img>heart", "fire"),
+                ("Party<img>party", "party"),
             ]
         ),
         "enabled": True,
@@ -76,8 +70,8 @@ buttons_conf_esp32 = {
         "led_out": 18,
         "commands": OrderedDict(
             [
-                ("Ljus pa<img>{}".format(light_bulb_off), "lights_off"),
-                ("Ljus av<img>{}".format(light_bulb_on), "lights_on"),
+                ("Ljus av<img>light_bulb_off", "lights_off"),
+                ("Ljus pa<img>light_bulb_on", "lights_on"),
             ]
         ),
         "enabled": True,
@@ -87,12 +81,12 @@ buttons_conf_esp32 = {
         "led_out": 23,
         "commands": OrderedDict(
             [
-                ("Allt av<img>{}".format(all_off), "all_off"),
-                ("Lag volym<img>{}".format(low_volume), "low_volume"),
-                ("Mellan vol<img>{}".format(medium_volume), "medium_volume"),
-                ("Hog vol<img>{}".format(high_volume), "high_volume"),
-                ("Grupp ljud<img>{}".format(speaker), "group_audio"),
-                ("Separat ljud<img>{}".format(speaker), "ungroup_audio"),
+                ("Allt av<img>all_off", "all_off"),
+                ("Lag volym<img>low_volume", "low_volume"),
+                ("Mellan vol<img>medium_volume", "medium_volume"),
+                ("Hog vol<img>high_volume", "high_volume"),
+                ("Grupp ljud<img>speaker", "group_audio"),
+                ("Separat ljud<img>speaker", "ungroup_audio"),
             ]
         ),
         "enabled": True,

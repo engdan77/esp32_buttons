@@ -29,6 +29,7 @@ else:
 
 import random
 from config import mqtt_user, mqtt_pass, ssid, wifi_pw, client_id
+import images
 
 
 def get_mqtt_config(user, password, wifi_coro, connect_coro, ssid, wifi_pw, client_id='my_buttons'):
@@ -313,6 +314,7 @@ class Screen:
         img = None
         if len(both) == 2:
             text, img = both
+            img = getattr(images, img)
         else:
             (text,) = both
 
@@ -562,7 +564,11 @@ class Controller:
             self.current_button = 0
             empty_queue(self.b.q)
             self.s.clear()
-            self.option_timers.pop(ref)
+            print('current timers: {}'.format(self.option_timers))
+            try:
+                self.option_timers.pop(ref)
+            except KeyError:
+                print('was unable to remove key {}, of type {}'.format(ref, type(ref)))
         else:
             print("key pressed and this coroutine aborted")
 
@@ -638,6 +644,7 @@ async def other_loop(b, _text, mqtt):
         img = None
         if len(both) == 2:
             text, img = both
+            img = getattr(images, img)
         else:
             (text,) = both
 
