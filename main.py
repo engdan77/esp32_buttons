@@ -32,40 +32,42 @@ from config import mqtt_user, mqtt_pass, ssid, wifi_pw, client_id
 import images
 
 
-def get_mqtt_config(user, password, wifi_coro, connect_coro, ssid, wifi_pw, client_id='my_buttons'):
+def get_mqtt_config(
+    user, password, wifi_coro, connect_coro, ssid, wifi_pw, client_id="my_buttons"
+):
     return {
-                "client_id": client_id,
-                "server": "10.1.1.5",
-                "port": 0,
-                "user": user,
-                "password": password,
-                "keepalive": 60,
-                "ping_interval": 0,
-                "ssl": False,
-                "ssl_params": {},
-                "response_time": 10,
-                "clean_init": True,
-                "clean": True,
-                "max_repubs": 4,
-                "will": None,
-                "subs_cb": lambda *_: None,
-                "wifi_coro": wifi_coro,
-                "connect_coro": connect_coro,
-                "ssid": ssid,
-                "wifi_pw": wifi_pw,
-                "default_topic": "/esp32_buttons",
-            }
+        "client_id": client_id,
+        "server": "10.1.1.5",
+        "port": 0,
+        "user": user,
+        "password": password,
+        "keepalive": 60,
+        "ping_interval": 0,
+        "ssl": False,
+        "ssl_params": {},
+        "response_time": 10,
+        "clean_init": True,
+        "clean": True,
+        "max_repubs": 4,
+        "will": None,
+        "subs_cb": lambda *_: None,
+        "wifi_coro": wifi_coro,
+        "connect_coro": connect_coro,
+        "ssid": ssid,
+        "wifi_pw": wifi_pw,
+        "default_topic": "/esp32_buttons",
+    }
 
 
 async def start_web_repl(**args):
-    print('start ext command')
-    self = args.get('self', None)
+    print("start ext command")
+    self = args.get("self", None)
     if self:
-        self.s.print('webrepl')
+        self.s.print("webrepl")
     await asyncio.sleep(3)
-    if sys.platform == 'esp32':
+    if sys.platform == "esp32":
         stop_all_wifi()
-        start_ap('my_buttons')
+        start_ap("my_buttons")
         webrepl.start_foreground()
 
 
@@ -95,11 +97,11 @@ def esp32_deep_sleep(button_pins):
 def get_led_pin(conf, button_number=None):
     pins = []
     for k, v in conf.items():
-        if 'led_out' in v and isinstance(v['led_out'], int):
-            if button_number and v['name'] == str(button_number):
-                return [v['led_out']]
+        if "led_out" in v and isinstance(v["led_out"], int):
+            if button_number and v["name"] == str(button_number):
+                return [v["led_out"]]
             else:
-                pins.append(v['led_out'])
+                pins.append(v["led_out"])
     return pins
 
 
@@ -141,6 +143,7 @@ async def connect_coro(client_instance):
         "/esp32/button", "established", retain=False, qos=1, timeout=None
     )
 
+
 # class definitions
 
 
@@ -162,9 +165,7 @@ class MyMQTT:
 
     async def esp32_connect(self):
         if self.led:
-            self.loop.create_task(
-                self.led.start_pulse([self.led.red, self.led.green])
-            )
+            self.loop.create_task(self.led.start_pulse([self.led.red, self.led.green]))
         try:
             await self.mqtt_client.connect()
         except OSError as e:
@@ -192,22 +193,27 @@ class MyMQTT:
                     break
         else:
             self.mqtt_client.connect(self.mqtt_config["server"])
-            print('connected to mqtt')
+            print("connected to mqtt")
 
     def disconnect(self):
         self.mqtt_client.disconnect()
 
     async def publish(self, message, topic=None):
-        if sys.platform == 'esp32':
+        if sys.platform == "esp32":
             await self.mqtt_client.publish(
                 topic if topic else self.mqtt_config["default_topic"], message
             )
         else:
             l = asyncio.get_event_loop()
-            await l.run_in_executor(None, self.mqtt_client.publish, topic if topic else self.mqtt_config["default_topic"], message)
+            await l.run_in_executor(
+                None,
+                self.mqtt_client.publish,
+                topic if topic else self.mqtt_config["default_topic"],
+                message,
+            )
 
     def is_connected(self):
-        if sys.platform == 'esp32':
+        if sys.platform == "esp32":
             r = self.mqtt_client.isconnected()
         else:
             r = True
@@ -254,7 +260,7 @@ class Buttons:
 
 class Screen:
     def __init__(
-            self, text=[""], scl_pin=22, sda_pin=21, width=128, height=64, max_queue=10
+        self, text=[""], scl_pin=22, sda_pin=21, width=128, height=64, max_queue=10
     ):
         self.q = deque((), 10)
         self.scl_pin = scl_pin
@@ -328,9 +334,13 @@ class Screen:
         self.oled.show()
 
     async def _display_image(self, img, x_offset=0, y_offset=10):
-        for y, row in enumerate(img.strip().split('\n')):
+        for y, row in enumerate(img.strip().split("\n")):
             for x, c in enumerate(row):
-                self.oled.pixel(x_offset + x + self.x_image, y_offset + y + self.y_image, (1, 0)[int(c)])
+                self.oled.pixel(
+                    x_offset + x + self.x_image,
+                    y_offset + y + self.y_image,
+                    (1, 0)[int(c)],
+                )
                 asyncio.sleep(0)
         self.oled.show()
 
@@ -339,7 +349,15 @@ class Screen:
 
 
 class Led:
-    def __init__(self, button_pins=[], pin_red=13, pin_green=12, pin_blue=14, frequency=64, interval=0.05):
+    def __init__(
+        self,
+        button_pins=[],
+        pin_red=13,
+        pin_green=12,
+        pin_blue=14,
+        frequency=64,
+        interval=0.05,
+    ):
         self.red = pin_red
         self.green = pin_green
         self.blue = pin_blue
@@ -415,13 +433,13 @@ class Led:
 
 class Controller:
     def __init__(
-            self,
-            button_instance: Buttons,
-            screen_instance: Screen,
-            led_instance: Led = None,
-            mqtt_instance: MyMQTT = None,
-            inactivity_timeout=20,
-            wifi_timeout=10
+        self,
+        button_instance: Buttons,
+        screen_instance: Screen,
+        led_instance: Led = None,
+        mqtt_instance: MyMQTT = None,
+        inactivity_timeout=20,
+        wifi_timeout=10,
     ):
         self.b = button_instance
         self.s = screen_instance
@@ -436,14 +454,16 @@ class Controller:
         self.last_button_pressed = None
         self.inactivity_timeout = self.current_inactivity_countdown = inactivity_timeout
         asyncio.get_event_loop().create_task(self.loop_process())
-        if sys.platform == 'esp32':
+        if sys.platform == "esp32":
             asyncio.get_event_loop().create_task(self.inactivity_timeout_loop())
 
     async def inactivity_timeout_loop(self, interval=0.2):
         while self.enabled and self.current_inactivity_countdown >= 0:
-            self.current_inactivity_countdown = float(self.current_inactivity_countdown) - interval
+            self.current_inactivity_countdown = (
+                float(self.current_inactivity_countdown) - interval
+            )
             await asyncio.sleep(interval)
-        msg = 'Zzzzz'
+        msg = "Zzzzz"
         self.s.print(msg)
         await asyncio.sleep(2)
         self.s.turn_off()
@@ -467,9 +487,12 @@ class Controller:
                 button_key, type(button_key)
             )
         )
-        if sys.platform == 'esp32':
+        if sys.platform == "esp32":
             self.current_inactivity_countdown = self.inactivity_timeout
-            if self.last_button_pressed is None or self.last_button_pressed == button_key:
+            if (
+                self.last_button_pressed is None
+                or self.last_button_pressed == button_key
+            ):
                 all_button_leds = get_led_pin(self.b.config)
                 await self.l.state(False, all_button_leds)
                 self.last_button_pressed = button_key
@@ -494,7 +517,7 @@ class Controller:
 
         await asyncio.sleep(0)
         if not self.current_button == button_key or self.current_option + 1 >= len(
-                options["commands"]
+            options["commands"]
         ):
             # if you switch button with new options
             self.current_option = -1
@@ -536,7 +559,7 @@ class Controller:
                 interval = 0.05
                 if not self.m.is_connected():
                     connected = False
-                    self.s.print('waiting')
+                    self.s.print("waiting")
                     while count_down >= 0:
                         await asyncio.sleep(interval)
                         count_down -= interval
@@ -545,35 +568,46 @@ class Controller:
                             break
                 if connected:
                     msg = "{},{}".format(self.current_button, self.current_option)
-                    print('mqtt publish {}'.format(msg))
+                    print("mqtt publish {}".format(msg))
                     await self.m.publish(msg)
                     try:
-                        text, cmd = list(next(iter([v['commands'] for k, v in self.b.config.items() if str(v['name']) == str(self.current_button)])).items())[self.current_option]
+                        text, cmd = list(
+                            next(
+                                iter(
+                                    [
+                                        v["commands"]
+                                        for k, v in self.b.config.items()
+                                        if str(v["name"]) == str(self.current_button)
+                                    ]
+                                )
+                            ).items()
+                        )[self.current_option]
                     except IndexError:
-                        print('could not find config button and option')
+                        print("could not find config button and option")
                     else:
-                        if 'func:' in cmd:
-                            _, func = cmd.split(':')
+                        if "func:" in cmd:
+                            _, func = cmd.split(":")
                             await globals()[func](self=self)
                         await self.m.publish(cmd)
-                        print('mqtt sent')
+                        print("mqtt sent")
                 else:
-                    self.s.print('not connected')
+                    self.s.print("not connected")
 
             self.current_option = 0
             self.current_button = 0
             empty_queue(self.b.q)
             self.s.clear()
-            print('current timers: {}'.format(self.option_timers))
+            print("current timers: {}".format(self.option_timers))
             try:
                 self.option_timers.pop(ref)
             except KeyError:
-                print('was unable to remove key {}, of type {}'.format(ref, type(ref)))
+                print("was unable to remove key {}, of type {}".format(ref, type(ref)))
         else:
             print("key pressed and this coroutine aborted")
 
     def stop(self):
         self.enabled = False
+
 
 # esp32 hardware
 
@@ -593,24 +627,29 @@ async def start_esp32_loop():
     await asyncio.sleep(0)
     led = Led(led_pins)
     await asyncio.sleep(0)
-    mqtt_config = get_mqtt_config(mqtt_user, mqtt_pass, wifi_coro, connect_coro, ssid, wifi_pw, client_id)
+    mqtt_config = get_mqtt_config(
+        mqtt_user, mqtt_pass, wifi_coro, connect_coro, ssid, wifi_pw, client_id
+    )
     mqtt = MyMQTT(mqtt_config=mqtt_config, led_instance=led)
     await asyncio.sleep(0)
     loop.create_task(mqtt.connect())
     screen = Screen()
-    screen.print('Daniels knappar')
+    screen.print("Daniels knappar")
     await asyncio.sleep(0)
     Controller(buttons, screen, led, mqtt)
 
 
 # other hardware
 
+
 def init_other():
     text_ref = [""]
     led = Led()
     buttons = Buttons(buttons_conf_other)
     screen = Screen(text_ref)
-    mqtt_config = get_mqtt_config(mqtt_user, mqtt_pass, wifi_coro, connect_coro, ssid, wifi_pw, client_id)
+    mqtt_config = get_mqtt_config(
+        mqtt_user, mqtt_pass, wifi_coro, connect_coro, ssid, wifi_pw, client_id
+    )
     mqtt = MyMQTT(mqtt_config)
     Controller(buttons, screen, led, mqtt)
     loop = asyncio.get_event_loop()
