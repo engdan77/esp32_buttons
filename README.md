@@ -69,6 +69,14 @@ client_id = "my_buttons"
 
 Then obviously if an ESP32 you need to upload those files to the flash, otherwise you can run the main.py if you running on anything else.
 
+#### Adding images to the display
+
+If you'd like to include images to the output you can do so by suffixing the display-text with `<img>foo` where **foo** being the variable name that you import being a 40x40 1-dimensional matrix of 1/0 for the pixel on/off.
+
+I highly suggest tool such like https://www.dcode.fr/binary-image to convert you image to a matrix before including this into **images.py**
+
+
+
 ## Image of the end result (ugly but working)
 
 ![esp32_buttons](https://tva1.sinaimg.cn/large/007S8ZIlgy1gfy1mxqivlj30m80go7on.jpg)
