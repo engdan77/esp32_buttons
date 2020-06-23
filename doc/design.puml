@@ -1,0 +1,116 @@
+class MyMQTT {
+  led
+  loop
+  mqtt_client
+  mqtt_config
+  connect()
+  esp32_connect()
+  publish()
+  disconnect()
+  is_connected()
+  __init__()
+}
+
+class Buttons {
+  config
+  q
+  enabled
+  __init__()
+  loop_process()
+  get_pressed()
+  mock_press()
+  stop()
+}
+
+class Screen {
+  scl_pin
+  q
+  x_text
+  p
+  y_text
+  text
+  height
+  y_image
+  enabled
+  sda_pin
+  width
+  x_image
+  oled
+  stop()
+  print()
+  turn_off()
+  __init__()
+  _display_image()
+  _print_oled()
+  _print_mock()
+  loop_process()
+  clear()
+}
+
+class Led {
+  red
+  green
+  blue
+  pulse_on
+  frequency
+  button_pins
+  led_timers
+  enabled
+  __init__()
+  start_pulse()
+  stop_pulse()
+  state()
+  add_timer()
+  remove_timer()
+  timer_loop()
+  stop()
+  turn_all_off()
+}
+
+class Controller {
+  b
+  s
+  l
+  m
+  enabled
+  option_timout
+  option_timers
+  current_button
+  current_option
+  wifi_timeout
+  last_button_pressed
+  inactivity_timeout
+  current_inactivity_countdown
+  __init__()
+  inactivity_timeout_loop()
+  loop_process()
+  print_and_wait()
+  start_timer()
+  stop()
+}
+
+class MQTTClient {
+
+
+}
+
+class ssd1306.SSD1306_I2C {
+
+
+}
+
+class asyncio.get_event_loop {
+
+
+}
+
+class paho_client.Client {
+
+
+}
+
+MQTTClient <-- MyMQTT : MQTTClient
+ssd1306.SSD1306_I2C <-- Screen : ssd1306.SSD1306_I2C
+asyncio.get_event_loop <-- MyMQTT : asyncio.get_event_loop
+paho_client.Client <-- MyMQTT : paho_client.Client
+
