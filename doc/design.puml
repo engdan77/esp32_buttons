@@ -1,3 +1,4 @@
+@startuml
 class MyMQTT {
   led
   loop
@@ -113,4 +114,4 @@ MQTTClient <-- MyMQTT : MQTTClient
 ssd1306.SSD1306_I2C <-- Screen : ssd1306.SSD1306_I2C
 asyncio.get_event_loop <-- MyMQTT : asyncio.get_event_loop
 paho_client.Client <-- MyMQTT : paho_client.Client
-
+@enduml
